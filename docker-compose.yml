@@ -14,7 +14,7 @@ services:
           memory: "50MB"
 
   api1:
-    image: scoobiii/rinha-c:latest
+    build: .
     deploy:
       resources:
         limits:
@@ -22,7 +22,7 @@ services:
           memory: "150MB"
 
   api2:
-    image: scoobiii/rinha-c:latest
+    build: .
     deploy:
       resources:
         limits:
