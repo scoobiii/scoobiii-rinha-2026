@@ -1,1 +1,33 @@
 /target
+# ── Build artifacts ───────────────────────────────────────────
+src/*.o
+rinha-api
+preprocess
+
+# ── Dataset e índice (pesados, gerados no build) ───────────────
+resources/references.json.gz
+resources/references.bin
+/data/
+*.bin
+
+# ── Logs da Rinha (não incluir no PR de submissão) ─────────────
+docker-compose.logs
+k6.logs
+partial-results.json
+
+# ── Docker ────────────────────────────────────────────────────
+.docker/
+
+# ── Editor ────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── OS ────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Sockets (runtime) ─────────────────────────────────────────
+*.sock
