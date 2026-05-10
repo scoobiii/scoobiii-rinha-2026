@@ -58,7 +58,7 @@ wrk -t2 -c10 -d30s http://localhost:9999/ready
 ```
 **Output esperado:**
  * **Requests/sec:** 37,749.29
- * **Latency Avg:** 306.90us
+ * **Latency Avg:** 306.90μs
  * **Transfer/sec:** 5.47MB
 ## 14 Dimensões & Otimização ARM
 O motor de busca utiliza instruções de carregamento vetorial para as 14 dimensões, calculando a distância euclidiana sem necessidade de sqrt(), maximizando o throughput do processador Cortex.
