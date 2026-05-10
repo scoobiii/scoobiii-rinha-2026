@@ -31,7 +31,7 @@
 static ivf_index_t  g_index;
 static volatile int g_ready = 0;
 
-/* ── HTTP ─── */
+/* ── HTTP ──────────────────────────────────────────────────── */
 static void send_ok(int fd, const char *body, int blen) {
     char hdr[256];
     int n = snprintf(hdr, sizeof(hdr),
@@ -53,7 +53,7 @@ static void send_400(int fd) {
     write(fd, r, sizeof(r)-1);
 }
 
-/* ── JSON helpers (no alloc) ─── */
+/* ── JSON helpers (no alloc) ──────────────────────────────── */
 static const char *find_val(const char *json, const char *key) {
     size_t klen = strlen(key);
     const char *p = json;
@@ -105,7 +105,7 @@ static int str_in_arr(const char *s, const char *k, const char *val) {
     return 0;
 }
 
-/* ── Fraud handler ─── */
+/* ── Fraud handler ────────────────────────────────────────── */
 static void handle_fraud(int fd, const char *body) {
     double amount    = jdouble(body, "amount",      0.0);
     int installs     = jint   (body, "installments",1);
@@ -113,25 +113,24 @@ static void handle_fraud(int fd, const char *body) {
     double cust_avg  = jdouble(body, "avg_amount",  0.0);
     int tx_24h       = jint   (body, "tx_count_24h",0);
 
-    /* merchant section */
     char merc_id[32] = {0};
     const char *ms = strstr(body, "\"merchant\"");
     if (ms) jstr(ms, "id", merc_id, sizeof(merc_id));
-    char mcc[8]      = {0}; jstr(body, "mcc", mcc, sizeof(mcc));
+    char mcc[8] = {0}; jstr(body, "mcc", mcc, sizeof(mcc));
 
-    /* merchant.avg_amount = 2nd occurrence of "avg_amount" */
     double merch_avg = 0.0;
     { const char *p = body; int occ=0;
       while (p && *p) {
         p = strstr(p, "\"avg_amount\"");
-        if (!p) break; p+=12;
+        if (!p) break;
+        p+=12;
         while (*p==' '||*p==':') p++;
         if (occ==1) { merch_avg=strtod(p,NULL); break; }
         occ++; } }
 
-    int is_online    = jbool  (body, "is_online",    0);
-    int card_pres    = jbool  (body, "card_present", 1);
-    double km_home   = jdouble(body, "km_from_home", 0.0);
+    int is_online  = jbool(body, "is_online",    0);
+    int card_pres  = jbool(body, "card_present", 1);
+    double km_home = jdouble(body, "km_from_home", 0.0);
 
     int has_last=0; char last_ts[32]={0}; double km_cur=0.0;
     { const char *lt = strstr(body, "\"last_transaction\"");
@@ -154,8 +153,8 @@ static void handle_fraud(int fd, const char *body) {
 
     int fc = 0;
     for (int i = 0; i < found; i++) if (res[i].label == LABEL_FRAUD) fc++;
-    double score = found > 0 ? (double)fc / found : 0.5;
-    int approved  = score < 0.6;
+    double score    = found > 0 ? (double)fc / found : 0.5;
+    int    approved = score < 0.6;
 
     char resp[64];
     int rlen = snprintf(resp, sizeof(resp),
@@ -164,7 +163,7 @@ static void handle_fraud(int fd, const char *body) {
     send_ok(fd, resp, rlen);
 }
 
-/* ── Connection handler ─── */
+/* ── Connection handler ───────────────────────────────────── */
 static void handle_conn(int fd) {
     static __thread char buf[BUF_SIZE];
     int total = 0;
@@ -204,41 +203,44 @@ static void handle_conn(int fd) {
     handle_fraud(fd, body);
 }
 
-/* ── Thread pool ─── */
+/* ── Thread pool ──────────────────────────────────────────── */
 typedef struct {
-    int *q; int head,tail,size,cap;
+    int *q; int head, tail, size, cap;
     pthread_mutex_t mx; pthread_cond_t cv;
 } wq_t;
 
 static wq_t g_wq;
 
 static void wq_init(wq_t *q, int cap) {
-    q->q=malloc(cap*sizeof(int)); q->head=q->tail=q->size=0; q->cap=cap;
-    pthread_mutex_init(&q->mx,NULL); pthread_cond_init(&q->cv,NULL);
+    q->q = malloc(cap * sizeof(int));
+    q->head = q->tail = q->size = 0;
+    q->cap = cap;
+    pthread_mutex_init(&q->mx, NULL);
+    pthread_cond_init(&q->cv, NULL);
 }
 static void wq_push(wq_t *q, int fd) {
     pthread_mutex_lock(&q->mx);
-    if (q->size==q->cap) { pthread_mutex_unlock(&q->mx); close(fd); return; }
-    q->q[q->tail]=(fd); q->tail=(q->tail+1)%q->cap; q->size++;
+    if (q->size == q->cap) { pthread_mutex_unlock(&q->mx); close(fd); return; }
+    q->q[q->tail] = fd; q->tail = (q->tail+1) % q->cap; q->size++;
     pthread_cond_signal(&q->cv); pthread_mutex_unlock(&q->mx);
 }
 static int wq_pop(wq_t *q) {
     pthread_mutex_lock(&q->mx);
-    while (q->size==0) pthread_cond_wait(&q->cv,&q->mx);
-    int fd=q->q[q->head]; q->head=(q->head+1)%q->cap; q->size--;
+    while (q->size == 0) pthread_cond_wait(&q->cv, &q->mx);
+    int fd = q->q[q->head]; q->head = (q->head+1) % q->cap; q->size--;
     pthread_mutex_unlock(&q->mx); return fd;
 }
 static void *worker(void *a) {
     (void)a;
-    while (1) { int fd=wq_pop(&g_wq); handle_conn(fd); close(fd); }
+    while (1) { int fd = wq_pop(&g_wq); handle_conn(fd); close(fd); }
     return NULL;
 }
 
-/* ── main ─── */
+/* ── main ─────────────────────────────────────────────────── */
 int main(int argc, char **argv) {
     signal(SIGPIPE, SIG_IGN);
-    const char *sock  = argc>=2 ? argv[1] : SOCKET_PATH;
-    const char *ipath = argc>=3 ? argv[2] : INDEX_PATH;
+    const char *sock  = argc >= 2 ? argv[1] : SOCKET_PATH;
+    const char *ipath = argc >= 3 ? argv[2] : INDEX_PATH;
 
     printf("[scoobiii-rinha] loading %s\n", ipath);
     if (ivf_load(&g_index, ipath) != 0) {
@@ -250,20 +252,20 @@ int main(int argc, char **argv) {
 
     unlink(sock);
     int srv = socket(AF_UNIX, SOCK_STREAM, 0);
-    struct sockaddr_un addr = {.sun_family=AF_UNIX};
+    struct sockaddr_un addr = {.sun_family = AF_UNIX};
     strncpy(addr.sun_path, sock, sizeof(addr.sun_path)-1);
-    if (bind(srv,(struct sockaddr*)&addr,sizeof(addr))<0) { perror("bind"); return 1; }
+    if (bind(srv, (struct sockaddr*)&addr, sizeof(addr)) < 0) { perror("bind"); return 1; }
     chmod(sock, 0777);
     listen(srv, BACKLOG);
     printf("[scoobiii-rinha] ready on %s\n", sock);
 
     wq_init(&g_wq, 4096);
     pthread_t th[THREAD_POOL];
-    for (int i=0; i<THREAD_POOL; i++) pthread_create(&th[i],NULL,worker,NULL);
+    for (int i = 0; i < THREAD_POOL; i++) pthread_create(&th[i], NULL, worker, NULL);
 
     while (1) {
         int fd = accept(srv, NULL, NULL);
-        if (fd < 0) { if (errno==EINTR) continue; continue; }
+        if (fd < 0) { if (errno == EINTR) continue; continue; }
         wq_push(&g_wq, fd);
     }
 }
