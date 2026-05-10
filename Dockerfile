@@ -1,18 +1,17 @@
-FROM alpine:latest
+#!/bin/bash
 
-# Instala dependências
-RUN apk add --no-cache libgcc libc6-compat
+mkdir -p src
 
-# Copia o binário compilado
-COPY server_final /usr/local/bin/server_final
-COPY cJSON.c /usr/local/lib/
-COPY cJSON.h /usr/local/include/
+touch Dockerfile \
+      Makefile \
+      README.md \
+      docker-compose.yml \
+      info.json \
+      nginx.conf \
+      src/ivf.c \
+      src/ivf.h \
+      src/main.c \
+      src/preprocess.c \
+      src/vectorizer.h
 
-# Permissão de execução
-RUN chmod +x /usr/local/bin/server_final
-
-# Expõe a porta
-EXPOSE 9999
-
-# Comando para rodar
-CMD ["/usr/local/bin/server_final"]
+tree .

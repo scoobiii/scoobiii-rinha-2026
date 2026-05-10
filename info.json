@@ -1,7 +1,0 @@
-{
-    "participants": ["scoobiii"],
-    "social": ["https://github.com/scoobiii"],
-    "source-code-repo": "https://github.com/scoobiii/scoobiii-rinha-2026",
-    "stack": ["c", "cjson", "hnsw"],
-    "open_to_work": true
-}
