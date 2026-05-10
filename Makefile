@@ -1,55 +1,26 @@
-services:
+CC      = clang
+CFLAGS  = -O3 -march=native -Wall -Wextra -std=c11 \
+          -ffast-math -funroll-loops \
+          -Isrc
+LDFLAGS = -lm -lpthread -lz
 
-  nginx:
-    image: nginx:1.27-alpine
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - sockets:/sockets
-    ports:
-      - "9999:9999"
-    depends_on:
-      - api1
-      - api2
-    networks:
-      - backend
-    deploy:
-      resources:
-        limits:
-          cpus: "0.15"
-          memory: "24MB"
+BIN = rinha-api
 
-  api1:
-    image: ghcr.io/scoobiii/scoobiii-rinha-2026:latest
-    command: ["/usr/local/bin/rinha-api", "/sockets/api1.sock", "/data/ivf.bin"]
-    volumes:
-      - sockets:/sockets
-    networks:
-      - backend
-    deploy:
-      resources:
-        limits:
-          cpus: "0.425"
-          memory: "163MB"
+SRC = src/main.c src/ivf.c
+OBJ = $(SRC:.c=.o)
 
-  api2:
-    image: ghcr.io/scoobiii/scoobiii-rinha-2026:latest
-    command: ["/usr/local/bin/rinha-api", "/sockets/api2.sock", "/data/ivf.bin"]
-    volumes:
-      - sockets:/sockets
-    networks:
-      - backend
-    deploy:
-      resources:
-        limits:
-          cpus: "0.425"
-          memory: "163MB"
+all: $(BIN) preprocess
 
-volumes:
-  sockets:
+$(BIN): $(OBJ)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-networks:
-  backend:
-    driver: bridge
+preprocess: tools/preprocess.c src/ivf.c src/ivf.h src/vectorizer.h
+	$(CC) $(CFLAGS) -Isrc -o $@ tools/preprocess.c src/ivf.c $(LDFLAGS)
 
-# Total: 0.15 + 0.425 + 0.425 = 1.00 CPU
-#        24   + 163   + 163   = 350 MB ✓
+src/%.o: src/%.c src/ivf.h src/vectorizer.h
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+clean:
+	rm -f src/*.o $(BIN) preprocess
+
+.PHONY: all clean

@@ -31,3 +31,12 @@ Thumbs.db
 
 # ── Sockets (runtime) ─────────────────────────────────────────
 *.sock
+
+# C Build & Sockets
+rinha-api
+preprocess
+*.o
+*.sock
+nginx.pid
+nginx_error.log
+nginx-termux.conf
