@@ -1,29 +1,17 @@
 #pragma once
-#include <math.h>
+#include <stdint.h>
 #include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <time.h>
 
 #define DIMS 14
+#define Q_FACTOR 32767.0f
 
-/* mcc_risk table (hardcoded from mcc_risk.json) */
-static inline float mcc_risk_lookup(const char *mcc) {
-    if (!mcc || !*mcc) return 0.5f;
-    if (strcmp(mcc, "5411") == 0) return 0.15f;
-    if (strcmp(mcc, "5812") == 0) return 0.30f;
-    if (strcmp(mcc, "5912") == 0) return 0.20f;
-    if (strcmp(mcc, "5944") == 0) return 0.45f;
-    if (strcmp(mcc, "7801") == 0) return 0.80f;
-    if (strcmp(mcc, "7802") == 0) return 0.75f;
-    if (strcmp(mcc, "7995") == 0) return 0.85f;
-    if (strcmp(mcc, "4511") == 0) return 0.35f;
-    if (strcmp(mcc, "5311") == 0) return 0.25f;
-    if (strcmp(mcc, "5999") == 0) return 0.50f;
-    return 0.5f;
-}
+/* 
+ * Vetor quantizado (int16_t):
+ * Reduz o uso de cache em 50% e permite 8/16 operações por ciclo via SIMD.
+ */
+typedef int16_t vec_t;
 
-/* normalization.json constants */
+/* Constantes de Normalização */
 #define MAX_AMOUNT          10000.0f
 #define MAX_INSTALLMENTS    12.0f
 #define AMOUNT_VS_AVG_RATIO 10.0f
@@ -32,112 +20,105 @@ static inline float mcc_risk_lookup(const char *mcc) {
 #define MAX_TX_COUNT_24H    20.0f
 #define MAX_MERCHANT_AVG    10000.0f
 
-static inline float clamp01(float x) {
-    if (x < 0.0f) return 0.0f;
-    if (x > 1.0f) return 1.0f;
-    return x;
+/* 
+ * Fast MCC Lookup: Compara 4 bytes como um inteiro de 32 bits.
+ * Muito mais rápido que múltiplos strcmps.
+ */
+static inline float fast_mcc_risk(const char *mcc) {
+    if (!mcc || !mcc[0]) return 0.5f;
+    uint32_t m = *((uint32_t*)mcc);
+    switch(m) {
+        case 0x31313435: return 0.15f; // "5411"
+        case 0x32313835: return 0.30f; // "5812"
+        case 0x32313935: return 0.20f; // "5912"
+        case 0x34343935: return 0.45f; // "5944"
+        case 0x31303837: return 0.80f; // "7801"
+        case 0x32303837: return 0.75f; // "7802"
+        case 0x35393937: return 0.85f; // "7995"
+        case 0x31313534: return 0.35f; // "4511"
+        case 0x31313335: return 0.25f; // "5311"
+        case 0x39393935: return 0.50f; // "5999"
+        default: return 0.5f;
+    }
 }
 
-/* Parse ISO8601 UTC → hour (0-23) and dow (mon=0, sun=6) */
-static inline void parse_iso8601(const char *ts, int *hour, int *dow) {
-    *hour = 0; *dow = 0;
-    if (!ts || strlen(ts) < 19) return;
-    struct tm t = {0};
-    sscanf(ts, "%4d-%2d-%2dT%2d:%2d:%2d",
-           &t.tm_year, &t.tm_mon, &t.tm_mday,
-           &t.tm_hour, &t.tm_min, &t.tm_sec);
-    t.tm_year -= 1900;
-    t.tm_mon  -= 1;
-    t.tm_isdst = 0;
-    mktime(&t);
-    *hour = t.tm_hour;
-    /* tm_wday: 0=sun..6=sat → rinha: mon=0..sun=6 */
-    *dow = (t.tm_wday == 0) ? 6 : t.tm_wday - 1;
+/* 
+ * Fast ISO8601 Parser:
+ * Converte "2026-03-11T20:23:35Z" para Epoch e extrai Hour/DoW.
+ * Sem sscanf, sem mktime, sem locks de timezone.
+ */
+static inline void fast_parse_iso(const char *ts, int *h, int *dow, long *epoch) {
+    if (!ts || ts[0] == '\0') return;
+    
+    int y = (ts[0]-'0')*1000 + (ts[1]-'0')*100 + (ts[2]-'0')*10 + (ts[3]-'0');
+    int m = (ts[5]-'0')*10 + (ts[6]-'0');
+    int d = (ts[8]-'0')*10 + (ts[9]-'0');
+    *h    = (ts[11]-'0')*10 + (ts[12]-'0');
+    int min = (ts[14]-'0')*10 + (ts[15]-'0');
+    int sec = (ts[17]-'0')*10 + (ts[18]-'0');
+
+    // Algoritmo de Sakamoto para Day of Week
+    static int t[] = { 0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4 };
+    int y_dow = y - (m < 3);
+    *dow = (y_dow + y_dow/4 - y_dow/100 + y_dow/400 + t[m-1] + d) % 7;
+    // Ajuste para Mon=0 ... Sun=6
+    *dow = (*dow == 0) ? 6 : *dow - 1;
+
+    // Unix Epoch simplificado (Era 2000+)
+    if (m < 3) { y--; m += 12; }
+    *epoch = (long)(365*y + y/4 - y/100 + y/400 + (m*306 + 5)/10 + (d - 1)) * 86400L + (*h*3600) + (min*60) + sec;
 }
 
-/* Minutes between two ISO8601 timestamps */
-static inline float minutes_between(const char *ts_prev, const char *ts_cur) {
-    if (!ts_prev || !*ts_prev || !ts_cur || !*ts_cur) return -1.0f;
-    struct tm t1 = {0}, t2 = {0};
-    if (sscanf(ts_prev, "%4d-%2d-%2dT%2d:%2d:%2d",
-               &t1.tm_year, &t1.tm_mon, &t1.tm_mday,
-               &t1.tm_hour, &t1.tm_min, &t1.tm_sec) != 6) return -1.0f;
-    if (sscanf(ts_cur,  "%4d-%2d-%2dT%2d:%2d:%2d",
-               &t2.tm_year, &t2.tm_mon, &t2.tm_mday,
-               &t2.tm_hour, &t2.tm_min, &t2.tm_sec) != 6) return -1.0f;
-    t1.tm_year -= 1900; t1.tm_mon -= 1; t1.tm_isdst = 0;
-    t2.tm_year -= 1900; t2.tm_mon -= 1; t2.tm_isdst = 0;
-    time_t e1 = mktime(&t1);
-    time_t e2 = mktime(&t2);
-    double diff = difftime(e2, e1);
-    return (float)(fabs(diff) / 60.0);
+static inline float f_clamp01(float x) {
+    return (x < 0.0f) ? 0.0f : (x > 1.0f) ? 1.0f : x;
 }
 
 /*
- * Build the 14-dim vector from parsed transaction fields.
- *
- * Params match exactly the 14 dimensions in REGRAS_DE_DETECCAO.md:
- *   0  amount
- *   1  installments
- *   2  amount_vs_avg
- *   3  hour_of_day
- *   4  day_of_week
- *   5  minutes_since_last_tx  (-1 if no prior tx)
- *   6  km_from_last_tx        (-1 if no prior tx)
- *   7  km_from_home
- *   8  tx_count_24h
- *   9  is_online
- *  10  card_present
- *  11  unknown_merchant
- *  12  mcc_risk
- *  13  merchant_avg_amount
+ * Build Vector Quantized:
+ * Gera o vetor de 14 dimensões já escalado para int16.
  */
-static inline void build_vector(
-    float *vec,
-    /* transaction */
+static inline void build_vector_q(
+    vec_t *vec,
     float amount, int installments, const char *requested_at,
-    /* customer */
-    float cust_avg_amount, int tx_count_24h,
-    int merchant_is_known,          /* 1 if known, 0 if unknown */
-    /* merchant */
+    float cust_avg_amount, int tx_count_24h, int merchant_is_known,
     const char *mcc, float merch_avg_amount,
-    /* terminal */
     int is_online, int card_present, float km_from_home,
-    /* last_transaction (pass NULL/negative if absent) */
-    int has_last_tx,
-    const char *last_ts,            /* last_transaction.timestamp */
-    float km_from_current           /* last_transaction.km_from_current */
+    int has_last_tx, const char *last_ts, float km_from_current
 ) {
-    int hour = 0, dow = 0;
-    parse_iso8601(requested_at, &hour, &dow);
+    int hour, dow;
+    long current_epoch;
+    fast_parse_iso(requested_at, &hour, &dow, &current_epoch);
 
-    /* dim 0 */ vec[0]  = clamp01(amount / MAX_AMOUNT);
-    /* dim 1 */ vec[1]  = clamp01((float)installments / MAX_INSTALLMENTS);
-    /* dim 2 */ {
-        float ratio = (cust_avg_amount > 0.0f)
-            ? (amount / cust_avg_amount) / AMOUNT_VS_AVG_RATIO
-            : 1.0f;
-        vec[2] = clamp01(ratio);
+    float tmp[DIMS];
+
+    tmp[0]  = f_clamp01(amount / MAX_AMOUNT);
+    tmp[1]  = f_clamp01((float)installments / MAX_INSTALLMENTS);
+    tmp[2]  = (cust_avg_amount > 0.0f) ? f_clamp01((amount / cust_avg_amount) / AMOUNT_VS_AVG_RATIO) : 1.0f;
+    tmp[3]  = (float)hour / 23.0f;
+    tmp[4]  = (float)dow  / 6.0f;
+
+    // Dim 5: Minutes since last tx
+    if (!has_last_tx) {
+        tmp[5] = -1.0f;
+    } else {
+        int lh, ld; long last_epoch;
+        fast_parse_iso(last_ts, &lh, &ld, &last_epoch);
+        float diff_m = (float)(current_epoch - last_epoch) / 60.0f;
+        if (diff_m < 0) diff_m = -diff_m; // fabs manual
+        tmp[5] = f_clamp01(diff_m / MAX_MINUTES);
     }
-    /* dim 3 */ vec[3]  = (float)hour / 23.0f;
-    /* dim 4 */ vec[4]  = (float)dow  / 6.0f;
-    /* dim 5 */ {
-        if (!has_last_tx) {
-            vec[5] = -1.0f;
-        } else {
-            float mins = minutes_between(last_ts, requested_at);
-            vec[5] = (mins < 0) ? -1.0f : clamp01(mins / MAX_MINUTES);
-        }
+
+    tmp[6]  = (!has_last_tx) ? -1.0f : f_clamp01(km_from_current / MAX_KM);
+    tmp[7]  = f_clamp01(km_from_home / MAX_KM);
+    tmp[8]  = f_clamp01((float)tx_count_24h / MAX_TX_COUNT_24H);
+    tmp[9]  = is_online    ? 1.0f : 0.0f;
+    tmp[10] = card_present ? 1.0f : 0.0f;
+    tmp[11] = merchant_is_known ? 0.0f : 1.0f;
+    tmp[12] = fast_mcc_risk(mcc);
+    tmp[13] = f_clamp01(merch_avg_amount / MAX_MERCHANT_AVG);
+
+    // Quantização para int16 (SIMD friendly)
+    for(int i = 0; i < DIMS; i++) {
+        vec[i] = (vec_t)(tmp[i] * Q_FACTOR);
     }
-    /* dim 6 */ {
-        if (!has_last_tx) vec[6] = -1.0f;
-        else              vec[6] = clamp01(km_from_current / MAX_KM);
-    }
-    /* dim 7  */ vec[7]  = clamp01(km_from_home / MAX_KM);
-    /* dim 8  */ vec[8]  = clamp01((float)tx_count_24h / MAX_TX_COUNT_24H);
-    /* dim 9  */ vec[9]  = is_online    ? 1.0f : 0.0f;
-    /* dim 10 */ vec[10] = card_present ? 1.0f : 0.0f;
-    /* dim 11 */ vec[11] = merchant_is_known ? 0.0f : 1.0f; /* 1 = unknown */
-    /* dim 12 */ vec[12] = mcc_risk_lookup(mcc);
-    /* dim 13 */ vec[13] = clamp01(merch_avg_amount / MAX_MERCHANT_AVG);
 }
