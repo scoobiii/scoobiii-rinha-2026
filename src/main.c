@@ -46,7 +46,7 @@
 #define SOCKET_PATH "/data/data/com.termux/files/usr/tmp/rinha.sock"
 #endif
 #define INDEX_PATH  "data/ivf.bin"
-#define THREAD_POOL 16
+#define THREAD_POOL 8
 #define BACKLOG     4096
 #define BUF_SIZE    (32 * 1024)
 

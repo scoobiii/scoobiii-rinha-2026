@@ -4,14 +4,14 @@
 echo "🧹 Limpando processos e liberando cache..."
 pkill -9 scoobiii-rinha
 pkill -9 nginx
-sleep 1
+sleep 2
 rm -f /data/data/com.termux/files/usr/tmp/rinha.sock
 
 # 2. Iniciar o motor Scoobiii
 echo "⚙️ Iniciando motor de busca (nprobe=3)..."
 ./scoobiii-rinha &
 API_PID=$! 
-sleep 2
+sleep 5
 
 # 3. OTIMIZAÇÃO DE HARDWARE (Root)
 # Prioridade de tempo real no kernel
@@ -27,14 +27,14 @@ echo "🌐 Subindo proxy reverso Nginx..."
 nginx -c $(pwd)/nginx-termux.conf
 NGINX_PID=$(pgrep nginx | head -n 1)
 renice -n -15 -p $NGINX_PID 2>/dev/null
-sleep 1
+sleep 2
 
 # 5. ROTINA DE WARM-UP (Carregar mmap na RAM)
 echo "🔥 Aquecendo RAM e travando clock da CPU (10s)..."
 wrk -t1 -c1 -d10s -H "Connection: keep-alive" http://localhost:9999/ > /dev/null
 
 echo "✅ Sistema em estado de prontidão. Estabilizando..."
-sleep 3
+sleep 5
 
 # 6. BENCHMARK OFICIAL (Apontando para ~/rinha_test.lua)
 echo "📊 Rodando Benchmark Final (1 Threads /1  Conexões)..."
