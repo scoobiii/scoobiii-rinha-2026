@@ -1,0 +1,54 @@
+name: Build and Test Docker Image
+
+on:
+  push:
+    branches: [ main, submission ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:   # permite execução manual
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true
+          tags: scoobiii-rinha:test
+          # O dataset será baixado dentro do Dockerfile (wget).
+          # Evita cache para garantir download fresco
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run container and test /ready
+        run: |
+          docker run -d --name rinha-test -p 9999:9999 scoobiii-rinha:test
+          sleep 5
+          curl --retry 5 --retry-delay 2 --fail http://localhost:9999/ready
+          docker stop rinha-test
+          docker rm rinha-test
+
+      - name: (Opcional) Log in to GitHub Container Registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: (Opcional) Push to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}:latest
