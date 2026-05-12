@@ -1,3 +1,5 @@
+
+
 /target
 # ── Build artifacts ───────────────────────────────────────────
 src/*.o
@@ -40,3 +42,6 @@ preprocess
 nginx.pid
 nginx_error.log
 nginx-termux.conf
+backup_config_*/
+tuning_results.csv
+~/.fraud_test.lua

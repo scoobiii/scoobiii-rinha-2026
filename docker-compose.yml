@@ -18,7 +18,7 @@ services:
           memory: "24MB"
 
   api1:
-    image: ghcr.io/scoobiii/scoobiii-rinha-2026:latest
+    build: .
     command: ["/usr/local/bin/rinha-api", "/sockets/api1.sock", "/data/ivf.bin"]
     volumes:
       - sockets:/sockets
@@ -31,7 +31,7 @@ services:
           memory: "163MB"
 
   api2:
-    image: ghcr.io/scoobiii/scoobiii-rinha-2026:latest
+    build: .
     command: ["/usr/local/bin/rinha-api", "/sockets/api2.sock", "/data/ivf.bin"]
     volumes:
       - sockets:/sockets
@@ -49,6 +49,3 @@ volumes:
 networks:
   backend:
     driver: bridge
-
-# Total: 0.15 + 0.425 + 0.425 = 1.00 CPU
-#        24   + 163   + 163   = 350 MB ✓

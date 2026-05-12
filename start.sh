@@ -31,13 +31,13 @@ sleep 1
 
 # 5. ROTINA DE WARM-UP (Carregar mmap na RAM)
 echo "🔥 Aquecendo RAM e travando clock da CPU (10s)..."
-wrk -t2 -c2 -d10s -H "Connection: keep-alive" http://localhost:9999/ > /dev/null
+wrk -t1 -c1 -d10s -H "Connection: keep-alive" http://localhost:9999/ > /dev/null
 
 echo "✅ Sistema em estado de prontidão. Estabilizando..."
 sleep 3
 
 # 6. BENCHMARK OFICIAL (Apontando para ~/rinha_test.lua)
-echo "📊 Rodando Benchmark Final (2 Threads / 2 Conexões)..."
-wrk -t2 -c2 -d30s --timeout 10s -H "Connection: keep-alive" -s ~/rinha_test.lua --latency http://localhost:9999/
+echo "📊 Rodando Benchmark Final (1 Threads /1  Conexões)..."
+wrk -t1 -c1 -d30s --timeout 10s -H "Connection: keep-alive" -s ~/rinha_test.lua --latency http://localhost:9999/
 
 echo "🏁 Teste concluído com sucesso."

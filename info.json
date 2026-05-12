@@ -1,0 +1,7 @@
+{
+  "participants": ["scoobiii"],
+  "social": ["https://github.com/scoobiii"],
+  "source-code-repo": "https://github.com/scoobiii/scoobiii-rinha-2026",
+  "stack": ["C", "nginx", "IVF", "ARM-NEON", "AVX2"],
+  "open_to_work": false
+}
