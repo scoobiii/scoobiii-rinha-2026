@@ -1,17 +1,28 @@
-#!/bin/bash
+# Dockerfile para Rinha 2026 - Detecção de Fraude
+FROM ubuntu:24.04
 
-mkdir -p src
+# Instala dependências
+RUN apt-get update && apt-get install -y \
+    gcc \
+    make \
+    libc6-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-touch Dockerfile \
-      Makefile \
-      README.md \
-      docker-compose.yml \
-      info.json \
-      nginx.conf \
-      src/ivf.c \
-      src/ivf.h \
-      src/main.c \
-      src/preprocess.c \
-      src/vectorizer.h
+# Cria diretório da aplicação
+WORKDIR /app
 
-tree .
+# Copia código fonte
+COPY src/ ./src/
+COPY Makefile .
+COPY start.sh .
+COPY nginx.conf .
+COPY info.json .
+
+# Compila a aplicação
+RUN make clean && make
+
+# Expõe a porta
+EXPOSE 9999
+
+# Script de entrada
+CMD ["./start.sh"]
